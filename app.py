@@ -6,20 +6,22 @@ import plotly.graph_objects as go
 import pandas as pd
 import pickle
 import numpy as np
+import os
 
-# 1. External stylesheets, mainly for resetting default styles
+# 1. External stylesheets - using Normalize and Bootstrap for consistent styling
 external_stylesheets = [
-    'https://cdnjs.cloudflare.com/ajax/libs/normalize/8.0.1/normalize.min.css'
+    'https://cdnjs.cloudflare.com/ajax/libs/normalize/8.0.1/normalize.min.css',
+    'https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css'
 ]
 
-# 2. Initialize Dash app
+# 2. Initialize the Dash app
 app = dash.Dash(__name__, external_stylesheets=external_stylesheets, suppress_callback_exceptions=True)
 
-# 3. Read CSV data
+# 3. Load CSV data files
 df_raw = pd.read_csv("SouthTower_test_2019_2.csv")
 df_real = pd.read_csv("real_results_2019.csv")
 
-# 4. Standardize time format
+# 4. Standardize the Date_Time column format
 df_raw['Date_Time'] = pd.to_datetime(df_raw['Date_Time']).dt.strftime('%Y-%m-%d %H:%M:%S')
 df_real['Date_Time'] = pd.to_datetime(df_real['Date_Time']).dt.strftime('%Y-%m-%d %H:%M:%S')
 
@@ -29,17 +31,18 @@ with open("LR_model.sav", 'rb') as f:
 with open("RF_model.sav", 'rb') as f:
     rf_model = joblib.load(f)
 
-# 6. Define feature list
+# 6. Define the feature list for model input
 features = ['Power-1', 'Temperature(°C)', 'Solar Radiation(W/m²)', 'Holiday', 'hour', 'sin_hour']
 
-# 7. Prepare input features
+# 7. Prepare input features DataFrame
 X_input = df_raw[features]
 
-# 8. Predict using both models and round to 3 decimal places
+# 8. Make predictions using both models and round to 3 decimal places
 predictions_lr = lr_model.predict(X_input).round(3)
-predictions_rf = rf_model.predict(X_input).round(3)
+# Convert DataFrame to numpy array for Random Forest prediction to avoid warnings
+predictions_rf = rf_model.predict(X_input.values).round(3)
 
-# 9. Build predictions DataFrame
+# 9. Build a DataFrame for predictions and set Date_Time as index
 predictions_df = pd.DataFrame({
     'Date_Time': df_raw['Date_Time'],
     'LR_Prediction': predictions_lr,
@@ -47,10 +50,10 @@ predictions_df = pd.DataFrame({
 })
 predictions_df.set_index('Date_Time', inplace=True)
 
-# 10. Save predictions to CSV
+# 10. Save predictions to CSV file
 predictions_df.to_csv("model_predictions.csv")
 
-# Dash Layout
+# 11. Define the main layout for the dashboard
 app.layout = html.Div(
     style={
         'fontFamily': '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif',
@@ -60,10 +63,10 @@ app.layout = html.Div(
         'padding': '0'
     },
     children=[
-        # Top background section: using an image as background, includes title and calendar
+        # Top header section with background image, title, and date range picker
         html.Div(
             children=[
-                # Title
+                # Dashboard title
                 html.H1(
                     "IST SouthTower Energy Forecasting Dashboard",
                     style={
@@ -73,7 +76,7 @@ app.layout = html.Div(
                         'textShadow': '1px 1px 2px rgba(0,0,0,0.6)'
                     }
                 ),
-                # Calendar picker
+                # Date range picker for calendar selection
                 html.Div([
                     html.Label("Calendar:", style={
                         'fontWeight': 'bold',
@@ -116,7 +119,7 @@ app.layout = html.Div(
             }
         ),
 
-        # Tabs section
+        # Tabs for navigation between different sections
         dcc.Tabs(
             id="tabs",
             value='tab1',
@@ -135,7 +138,7 @@ app.layout = html.Div(
             }
         ),
 
-        # Tabs content
+        # Container for the content corresponding to the selected tab
         html.Div(
             id='tabs-content',
             style={
@@ -147,8 +150,7 @@ app.layout = html.Div(
     ]
 )
 
-
-# Main callback: Render layout for each tab
+# Callback to render content for each tab based on selected value and date range
 @app.callback(
     dd.Output('tabs-content', 'children'),
     [dd.Input('tabs', 'value'),
@@ -193,7 +195,7 @@ def render_content(tab, start_date, end_date):
                 dcc.Graph(id='raw-graph'),
                 dash_table.DataTable(
                     id='raw-data-table',
-                    # Columns are set based on df_raw columns, generated directly
+                    # Create table columns based on df_raw columns
                     columns=[{"name": col, "id": col} for col in df_raw.columns],
                     data=[],
                     page_size=10,
@@ -255,52 +257,118 @@ def render_content(tab, start_date, end_date):
         )
 
     elif tab == 'tab3':
-        # Tab 3: User Input Forecast Layout
+        # Tab 3: User Input Forecast Layout (Beautified with Bootstrap)
         return html.Div(
+            className="card",
             style={
                 'backgroundColor': '#ffffff',
-                'padding': '20px',
+                'padding': '0',
                 'borderRadius': '8px',
-                'boxShadow': '0 2px 4px rgba(0,0,0,0.1)'
+                'boxShadow': '0 2px 8px rgba(0,0,0,0.15)',
+                'margin': '20px auto',
+                'maxWidth': '800px'
             },
             children=[
-                html.H3("Forecasting for Today Based on User Inputs"),
-                html.Div([
-                    html.Label("Power-1 (kW):"),
-                    dcc.Input(id='power-input', type='number', value=0, style={'width': '100%', 'padding': '8px'})
-                ], style={'margin': '10px'}),
-                html.Div([
-                    html.Label("Temperature (°C):"),
-                    dcc.Input(id='temperature-input', type='number', value=25,
-                              style={'width': '100%', 'padding': '8px'})
-                ], style={'margin': '10px'}),
-                html.Div([
-                    html.Label("Solar Radiation (W/m²):"),
-                    dcc.Input(id='solar-input', type='number', value=500, style={'width': '100%', 'padding': '8px'})
-                ], style={'margin': '10px'}),
-                html.Div([
-                    html.Label("Holiday (0 or 1):"),
-                    dcc.Input(id='holiday-input', type='number', value=0, style={'width': '100%', 'padding': '8px'})
-                ], style={'margin': '10px'}),
-                html.Div([
-                    html.Label("Hour (0-23):"),
-                    dcc.Input(id='hour-input', type='number', value=12, style={'width': '100%', 'padding': '8px'})
-                ], style={'margin': '10px'}),
-                html.Div([
-                    html.Label("sin_hour:"),
-                    dcc.Input(id='sin-hour-input', type='number', value=0, style={'width': '100%', 'padding': '8px'})
-                ], style={'margin': '10px'}),
-                html.Button(
-                    "Predict",
-                    id='predict-button',
-                    style={'margin': '10px', 'padding': '10px 20px', 'fontSize': '1rem', 'cursor': 'pointer'}
+                # Card header for title with updated background color to match the Raw Data graph
+                html.Div(
+                    "Forecasting for Today Based on User Inputs",
+                    className="card-header",
+                    style={
+                        'fontSize': '1.5rem',
+                        'fontWeight': 'bold',
+                        'backgroundColor': '#e6f7ff',  # Changed from deep blue to light blue
+                        'color': '#1d1d1f',          # Dark text for better readability
+                        'borderRadius': '8px 8px 0 0'
+                    }
                 ),
-                html.Div(id='prediction-output', style={'margin': '10px', 'fontWeight': 'bold'})
+                # Card body for user inputs and button
+                html.Div(
+                    className="card-body",
+                    children=[
+                        # First row: Power-1 and Temperature inputs
+                        html.Div(
+                            className="form-row",
+                            children=[
+                                html.Div(
+                                    className="form-group col-md-6",
+                                    children=[
+                                        html.Label("Power-1 (kW):"),
+                                        dcc.Input(id='power-input', type='number', value=0, className='form-control')
+                                    ]
+                                ),
+                                html.Div(
+                                    className="form-group col-md-6",
+                                    children=[
+                                        html.Label("Temperature (°C):"),
+                                        dcc.Input(id='temperature-input', type='number', value=25, className='form-control')
+                                    ]
+                                )
+                            ]
+                        ),
+                        # Second row: Solar Radiation and Holiday inputs
+                        html.Div(
+                            className="form-row",
+                            children=[
+                                html.Div(
+                                    className="form-group col-md-6",
+                                    children=[
+                                        html.Label("Solar Radiation (W/m²):"),
+                                        dcc.Input(id='solar-input', type='number', value=500, className='form-control')
+                                    ]
+                                ),
+                                html.Div(
+                                    className="form-group col-md-6",
+                                    children=[
+                                        html.Label("Holiday (0 or 1):"),
+                                        dcc.Input(id='holiday-input', type='number', value=0, className='form-control')
+                                    ]
+                                )
+                            ]
+                        ),
+                        # Third row: Hour and sin_hour inputs
+                        html.Div(
+                            className="form-row",
+                            children=[
+                                html.Div(
+                                    className="form-group col-md-6",
+                                    children=[
+                                        html.Label("Hour (0-23):"),
+                                        dcc.Input(id='hour-input', type='number', value=12, className='form-control')
+                                    ]
+                                ),
+                                html.Div(
+                                    className="form-group col-md-6",
+                                    children=[
+                                        html.Label("sin_hour:"),
+                                        dcc.Input(id='sin-hour-input', type='number', value=0, className='form-control')
+                                    ]
+                                )
+                            ]
+                        ),
+                        # Predict button spanning full width with modified style for浅蓝色
+                        html.Button(
+                            "Predict",
+                            id='predict-button',
+                            className="btn mt-3",  # 移除了 btn-primary 以防止覆盖自定义样式
+                            style={
+                                'width': '100%',
+                                'backgroundColor': '#ADD8E6',  # 浅蓝色背景
+                                'border': 'none',
+                                'color': '#1d1d1f'
+                            }
+                        ),
+                        # Area to display prediction results
+                        html.Div(
+                            id='prediction-output',
+                            style={'marginTop': '20px', 'fontWeight': 'bold', 'textAlign': 'center'}
+                        )
+                    ]
+                )
             ]
         )
 
     elif tab == 'tab4':
-        # Tab 4: Exploratory Data Analysis Layout
+        # Tab 4: Exploratory Data Analysis (EDA) Layout
         return html.Div(
             style={
                 'backgroundColor': '#ffffff',
@@ -380,8 +448,7 @@ def render_content(tab, start_date, end_date):
             ]
         )
 
-
-# Callback: Update Raw Data Graph & Table (Tab1)
+# Callback to update the Raw Data graph and table (Tab 1)
 @app.callback(
     [
         dd.Output('raw-graph', 'figure'),
@@ -396,13 +463,13 @@ def render_content(tab, start_date, end_date):
 )
 def update_raw_graph_table(n_clicks, start_date, end_date, raw_graph_type):
     """
-    Dynamically update the Raw Data graph and table based on the user's selected graph type.
-    Also add reference lines (mean value for each feature) to the graph.
+    Update the Raw Data graph and table based on the selected graph type and date range.
+    Also adds reference lines (mean values) to the graph.
     """
-    # 1. Filter data
+    # 1. Filter data by date range
     filtered_raw = df_raw[(df_raw['Date_Time'] >= start_date) & (df_raw['Date_Time'] <= end_date)]
 
-    # 2. Build the graph
+    # 2. Create the graph figure
     fig = go.Figure()
     if raw_graph_type == 'line':
         for feat in features:
@@ -412,7 +479,7 @@ def update_raw_graph_table(n_clicks, start_date, end_date, raw_graph_type):
                 mode='lines',
                 name=feat
             ))
-        # Add horizontal reference line for each feature
+        # Add horizontal mean lines for each feature
         for feat in features:
             mean_val = filtered_raw[feat].mean()
             fig.add_hline(
@@ -423,7 +490,6 @@ def update_raw_graph_table(n_clicks, start_date, end_date, raw_graph_type):
                 annotation_position="top right",
                 annotation_font_color='cyan'
             )
-
     elif raw_graph_type == 'scatter':
         for feat in features:
             fig.add_trace(go.Scatter(
@@ -432,7 +498,7 @@ def update_raw_graph_table(n_clicks, start_date, end_date, raw_graph_type):
                 mode='markers',
                 name=feat
             ))
-        # Add horizontal reference line for each feature
+        # Add horizontal mean lines for each feature
         for feat in features:
             mean_val = filtered_raw[feat].mean()
             fig.add_hline(
@@ -443,7 +509,6 @@ def update_raw_graph_table(n_clicks, start_date, end_date, raw_graph_type):
                 annotation_position="top right",
                 annotation_font_color='cyan'
             )
-
     elif raw_graph_type == 'histogram':
         for feat in features:
             fig.add_trace(go.Histogram(
@@ -452,7 +517,7 @@ def update_raw_graph_table(n_clicks, start_date, end_date, raw_graph_type):
                 opacity=0.75
             ))
         fig.update_layout(barmode='overlay')
-        # Add vertical reference line for each feature
+        # Add vertical mean lines for each feature
         for feat in features:
             mean_val = filtered_raw[feat].mean()
             fig.add_vline(
@@ -464,7 +529,7 @@ def update_raw_graph_table(n_clicks, start_date, end_date, raw_graph_type):
                 annotation_font_color='cyan'
             )
 
-    # Update layout with a very light blue background
+    # Update graph layout with a light blue background
     fig.update_layout(
         title="Raw Data with Reference Lines",
         paper_bgcolor='#e6f7ff',
@@ -483,13 +548,11 @@ def update_raw_graph_table(n_clicks, start_date, end_date, raw_graph_type):
         )
     )
 
-    # 3. Update table data
+    # 3. Update table data by converting the filtered data to records
     table_data = filtered_raw.round(3).to_dict('records')
-
     return fig, table_data
 
-
-# Callback: Update Forecast & Metrics (Tab2)
+# Callback to update Forecast & Metrics (Tab 2)
 @app.callback(
     dd.Output('forecast-metrics-container', 'children'),
     [
@@ -500,11 +563,11 @@ def update_raw_graph_table(n_clicks, start_date, end_date, raw_graph_type):
     ]
 )
 def update_forecast_metrics(forecast_method, selected_metrics, start_date, end_date):
-    # 4. Filter prediction and actual data
+    # 1. Filter the predictions and actual data based on the date range
     filtered_pred = predictions_df.loc[start_date:end_date]
     filtered_real = df_real[(df_real['Date_Time'] >= start_date) & (df_real['Date_Time'] <= end_date)]
 
-    # 5. Build forecast graph
+    # 2. Build the forecast graph comparing actual data with predictions
     fig_forecast = go.Figure()
     fig_forecast.add_trace(go.Scatter(
         x=filtered_real['Date_Time'],
@@ -526,7 +589,7 @@ def update_forecast_metrics(forecast_method, selected_metrics, start_date, end_d
             mode='lines',
             name='Random Forest'
         ))
-    # Update layout with a very light blue background
+    # Update layout with light blue background
     fig_forecast.update_layout(
         title="Forecast Comparison",
         paper_bgcolor='#e6f7ff',
@@ -545,7 +608,7 @@ def update_forecast_metrics(forecast_method, selected_metrics, start_date, end_d
         )
     )
 
-    # 6. Build error metrics table, rounded to 6 decimal places
+    # 3. Build error metrics table (dummy metrics for demonstration)
     metrics_data = {
         "Methods": ["Linear Regression", "Random Forest"],
         "MAE": [111.637, 44.494],
@@ -557,15 +620,15 @@ def update_forecast_metrics(forecast_method, selected_metrics, start_date, end_d
     }
     metrics_df = pd.DataFrame(metrics_data).round(6)
 
-    # 7. Show only selected metrics
+    # 4. Display only the selected metrics
     cols_to_show = ['Methods'] + selected_metrics
     metrics_df = metrics_df[cols_to_show]
 
-    # 8. Ensure NMBE is displayed with 6 decimal places
+    # 5. Ensure NMBE is displayed with 6 decimal places if selected
     if 'NMBE' in metrics_df.columns:
         metrics_df["NMBE"] = metrics_df["NMBE"].apply(lambda x: format(x, ".6f"))
 
-    # 9. Display metrics using DataTable
+    # 6. Create a DataTable to display the metrics
     table = dash_table.DataTable(
         columns=[{"name": col, "id": col} for col in metrics_df.columns],
         data=metrics_df.to_dict('records'),
@@ -596,8 +659,7 @@ def update_forecast_metrics(forecast_method, selected_metrics, start_date, end_d
         ]
     )
 
-
-# Callback: Update EDA Graph (Tab4)
+# Callback to update the Exploratory Data Analysis (EDA) Graph (Tab 4)
 @app.callback(
     dd.Output('eda-graph', 'figure'),
     [dd.Input('update-eda', 'n_clicks')],
@@ -609,11 +671,11 @@ def update_forecast_metrics(forecast_method, selected_metrics, start_date, end_d
     ]
 )
 def update_eda_graph(n_clicks, graph_type, variables, start_date, end_date):
-    # 10. Filter raw data
+    # 1. Filter data for the selected date range
     filtered_data = df_raw[(df_raw['Date_Time'] >= start_date) & (df_raw['Date_Time'] <= end_date)]
     fig = go.Figure()
 
-    # 11. Build the graph based on selected type
+    # 2. Build the graph based on the selected graph type
     if graph_type == 'line':
         for var in variables:
             fig.add_trace(go.Scatter(
@@ -639,7 +701,7 @@ def update_eda_graph(n_clicks, graph_type, variables, start_date, end_date):
             ))
         fig.update_layout(barmode='overlay')
 
-    # Update layout with a very light blue background
+    # Update graph layout with light blue background
     fig.update_layout(
         title="Exploratory Data Analysis",
         paper_bgcolor='#e6f7ff',
@@ -659,8 +721,7 @@ def update_eda_graph(n_clicks, graph_type, variables, start_date, end_date):
     )
     return fig
 
-
-# Callback: User Input Forecast (Tab3)
+# Callback for the User Input Forecast (Tab 3)
 @app.callback(
     dd.Output('prediction-output', 'children'),
     [dd.Input('predict-button', 'n_clicks')],
@@ -674,26 +735,25 @@ def update_eda_graph(n_clicks, graph_type, variables, start_date, end_date):
     ]
 )
 def predict_power(n_clicks, power_1, temperature, solar, holiday, hour, sin_hour):
-    # 12. Check button click count
+    # 1. Check if the predict button has been clicked
     if not n_clicks:
         return ""
-    # 13. Build a single row input DataFrame
+    # 2. Build a single row input DataFrame for prediction
     input_data = pd.DataFrame([[
         power_1, temperature, solar, holiday, hour, sin_hour
     ]], columns=['Power-1', 'Temperature(°C)', 'Solar Radiation(W/m²)', 'Holiday', 'hour', 'sin_hour'])
 
-    # 14. Predict using LR and RF separately
+    # 3. Make predictions using both models
     lr_pred = lr_model.predict(input_data)[0]
-    rf_pred = rf_model.predict(input_data)[0]
+    rf_pred = rf_model.predict(input_data.values)[0]
 
-    # 15. Return the results
+    # 4. Return the predictions formatted to three decimal places
     return (
         f"Linear Regression Prediction: {lr_pred:.3f} kW  |  "
         f"Random Forest Prediction: {rf_pred:.3f} kW"
     )
 
-
-# Callback: Feature Selection (Tab5)
+# Callback for Feature Selection (Tab 5)
 @app.callback(
     dd.Output('fs-output', 'children'),
     [dd.Input('run-fs', 'n_clicks')],
@@ -701,10 +761,10 @@ def predict_power(n_clicks, power_1, temperature, solar, holiday, hour, sin_hour
      dd.State('fs-method', 'value')]
 )
 def run_feature_selection(n_clicks, selected_features, method):
-    # 16. Check button click count
+    # 1. Check if the feature selection button has been clicked
     if not n_clicks:
         return ""
-    # 17. Dummy simulation: select half of the features as the result
+    # 2. Dummy simulation: select half of the features as a dummy result
     dummy_selected = selected_features[:max(1, len(selected_features) // 2)]
     result = (
         f"Feature selection using {method} on features: {', '.join(selected_features)}. "
@@ -712,13 +772,9 @@ def run_feature_selection(n_clicks, selected_features, method):
     )
     return html.Div(result, style={'marginTop': '20px', 'fontWeight': 'bold'})
 
-
-# 18. Configure the server
+# Configure the server for deployment
 server = app.server
 
-# 19. Run the Dash app
+# Run the Dash app
 if __name__ == '__main__':
     app.run_server(debug=True)
-
-
-
