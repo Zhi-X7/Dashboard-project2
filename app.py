@@ -1,4 +1,5 @@
 import dash
+import joblib
 from dash import dcc, html, dash_table
 import dash.dependencies as dd
 import plotly.graph_objects as go
@@ -26,7 +27,7 @@ df_real['Date_Time'] = pd.to_datetime(df_real['Date_Time']).dt.strftime('%Y-%m-%
 with open("LR_model.sav", 'rb') as f:
     lr_model = pickle.load(f)
 with open("RF_model.sav", 'rb') as f:
-    rf_model = pickle.load(f)
+    rf_model = joblib.load(f)
 
 # 6. Define feature list
 features = ['Power-1', 'Temperature(°C)', 'Solar Radiation(W/m²)', 'Holiday', 'hour', 'sin_hour']
@@ -718,3 +719,6 @@ server = app.server
 # 19. Run the Dash app
 if __name__ == '__main__':
     app.run_server(debug=True)
+
+
+
